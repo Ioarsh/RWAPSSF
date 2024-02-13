@@ -3,7 +3,7 @@
 pragma solidity >=0.7.0 <0.9.0;
 import "./CommitReveal.sol";
 
-contract RWAPSSF {
+contract RWAPSSF is CommitReveal{
     struct Player {
         uint choice; // 0 - Rock, 1 - Fire , 2 - Scissors, 3 - Sponge, 4 - Paper, 5 - Air, 6 - Water, 7 - Undefined
         uint timestamp;
@@ -15,15 +15,14 @@ contract RWAPSSF {
     mapping (uint => Player) private player;
     mapping (address => uint) private PlayerIndex;
     uint internal numInput = 0;
-    uint internal choose_timelimit = 5 minutes;
-    uint internal waiting_timelimit = 10 minutes;
+    uint internal choose_timelimit = 10 minutes;
 
 
     function GameStatus() public view returns(uint Player_now, uint prize, uint Choice_now) {
         return(numPlayer,reward,numInput);
     }
 
-    function reset() private{
+    function _reset() private{
         numPlayer = 0;
         reward = 0;
         numInput = 0;
@@ -45,10 +44,10 @@ contract RWAPSSF {
             payable(player[0].addr).transfer(reward/2);
             payable(player[1].addr).transfer(reward/2);
         }
-        reset();
+        _reset();
     }
 
-    function terminate() private {
+    function _terminate() private {
         if(player[0].foul==true){
             payable(player[1].addr).transfer(reward);
         }
@@ -59,7 +58,7 @@ contract RWAPSSF {
             payable(player[0].addr).transfer(reward/2);
             payable(player[1].addr).transfer(reward/2);
         }
-        reset();
+        _reset();
     }
 
     function addPlayer() public payable {
@@ -77,7 +76,7 @@ contract RWAPSSF {
         }
     }
 
-    function input(uint choice) public{
+    function input(uint choice, uint salt) public{
         uint idx = PlayerIndex[msg.sender];
         require(numPlayer == 2);
         require(msg.sender == player[idx].addr);
@@ -85,12 +84,22 @@ contract RWAPSSF {
         if(block.timestamp > player[idx].timestamp + choose_timelimit){
             player[idx].foul = true;
         }
-        player[idx].choice = choice;
+        uint HashedData = uint(getSaltedHash(bytes32(choice),bytes32(salt)));
+        player[idx].choice = HashedData;
+        commit(bytes32(HashedData));
         numInput++;
-        if (numInput == 2) {
+    }
+
+    function RevealAns(uint answer,uint saltz) public{
+        require(numInput == 2);
+        revealAnswer(bytes32(answer),bytes32(saltz));
+        uint idx = PlayerIndex[msg.sender];
+        player[idx].choice = answer;
+        if(commits[player[0].addr].revealed==true && commits[player[1].addr].revealed==true){
             _checkWinnerAndPay();
         }
     }
+
 
     function _checkWinnerAndPay() private {
         uint p0Choice = player[0].choice;
@@ -98,22 +107,22 @@ contract RWAPSSF {
         address payable account0 = payable(player[0].addr);
         address payable account1 = payable(player[1].addr);
         if(player[0].foul == true || player[1].foul == true){
-            terminate();
+            _terminate();
             return;
         }
         if (((p0Choice + 1) % 7 == p1Choice) || ((p0Choice + 2) % 7 == p1Choice) || ((p0Choice + 3) % 7 == p1Choice)) {
-            // to pay player[1]
-            account1.transfer(reward);
-        }
-        else if (((p1Choice + 2) % 7 == p0Choice) || ((p1Choice + 2) % 7 == p0Choice) || ((p1Choice + 3) % 7 == p0Choice)) {
             // to pay player[0]
-            account0.transfer(reward);    
+            account0.transfer(reward);
+        }
+        else if (((p1Choice + 1) % 7 == p0Choice) || ((p1Choice + 2) % 7 == p0Choice) || ((p1Choice + 3) % 7 == p0Choice)) {
+            // to pay player[1]
+            account1.transfer(reward);    
         }
         else {
             // to split reward
             account0.transfer(reward / 2);
             account1.transfer(reward / 2);
         }
-        reset();
+        _reset();
     }
 }
